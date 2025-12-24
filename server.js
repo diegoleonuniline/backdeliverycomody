@@ -62,148 +62,150 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Delivery Backend Running' });
 });
 
-// MENU COMPLETO - AppSheet productos + MySQL categorias/banners/promociones
 app.get('/api/menu', async (req, res) => {
-  try {
-    // AppSheet: Productos, Extras, ProductoExtras
-    const [rawProductos, rawExtras, rawProductoExtras] = await Promise.all([
-      appSheetFind("Productos"),
-      appSheetFind("Extras"),
-      appSheetFind("ProductoExtras")
-    ]);
+    try {
+        // AppSheet: Productos, Extras, ProductoExtras, Banners, Cupones, Promociones
+        const [rawProductos, rawExtras, rawProductoExtras, rawBanners, rawCupones, rawPromociones, rawPromoProductos] = await Promise.all([
+            appSheetFind("Productos"),
+            appSheetFind("Extras"),
+            appSheetFind("ProductoExtras"),
+            appSheetFind("Banners"),
+            appSheetFind("Cupones"),
+            appSheetFind("Promociones"),
+            appSheetFind("PromocionProductos")
+        ]);
 
-    // MySQL: Categorías, Banners, Promociones
-    const [categorias] = await pool.query("SELECT * FROM categorias WHERE activo = 'SI' ORDER BY icono");
-    const [banners] = await pool.query("SELECT * FROM banners WHERE activo = 'SI'");
-    const [promociones] = await pool.query("SELECT * FROM promociones WHERE activo = 'SI'");
-    const [promoProductos] = await pool.query("SELECT * FROM promocionproductos");
+        // MySQL: Solo Categorías
+        const [categorias] = await pool.query("SELECT * FROM categorias WHERE activo = 'SI' ORDER BY icono");
 
-    // Procesar categorías
-    const categoriasFormat = categorias.map(r => ({
-      id: r.id,
-      nombre: r.nombre || "",
-      icono: r.icono || "📦",
-      orden: 99
-    }));
+        const categoriasFormat = categorias.map(r => ({
+            id: r.id,
+            nombre: r.nombre || "",
+            icono: r.icono || "📦",
+            orden: 99
+        }));
 
-    // Procesar productos
-    const productos = rawProductos
-      .filter(r => r.Disponible && r.Disponible.toUpperCase() === "SI")
-      .map(r => {
-        let imagen = "";
-        const urlProducto = r.URL_Producto || "";
-        if (urlProducto && urlProducto.includes("fileName=")) {
-          const fileName = urlProducto.split("fileName=")[1];
-          if (fileName && fileName.trim() && !fileName.startsWith("&")) {
-            imagen = urlProducto;
-          }
-        }
-        return {
-          id: r.ID,
-          nombre: r.Nombre,
-          descripcion: r.Descripcion || "",
-          precio: parseFloat(r.Precio) || 0,
-          categoria: r.Categoria,
-          imagen,
-          tiempo: r.TiempoPreparacion || "15 min",
-          tieneExtras: r.TieneExtras && r.TieneExtras.toUpperCase() === "SI",
-          destacado: r.Destacado && r.Destacado.toLowerCase() === "si"
-        };
-      });
+        const productos = rawProductos
+            .filter(r => r.Disponible && r.Disponible.toUpperCase() === "SI")
+            .map(r => {
+                let imagen = "";
+                const urlProducto = r.URL_Producto || "";
+                if (urlProducto && urlProducto.includes("fileName=")) {
+                    const fileName = urlProducto.split("fileName=")[1];
+                    if (fileName && fileName.trim() && !fileName.startsWith("&")) {
+                        imagen = urlProducto;
+                    }
+                }
+                return {
+                    id: r.ID,
+                    nombre: r.Nombre,
+                    descripcion: r.Descripcion || "",
+                    precio: parseFloat(r.Precio) || 0,
+                    categoria: r.Categoria,
+                    imagen,
+                    tiempo: r.TiempoPreparacion || "15 min",
+                    tieneExtras: r.TieneExtras && r.TieneExtras.toUpperCase() === "SI",
+                    destacado: r.Destacado && r.Destacado.toLowerCase() === "si"
+                };
+            });
 
-    const destacados = productos.filter(p => p.destacado);
+        const destacados = productos.filter(p => p.destacado);
 
-    const extras = rawExtras
-      .filter(r => r.Disponible && r.Disponible.toUpperCase() === "SI")
-      .map(r => ({
-        id: r.ID,
-        nombre: r.Nombre,
-        precio: parseFloat(r.Precio) || 0
-      }));
+        const extras = rawExtras
+            .filter(r => r.Disponible && r.Disponible.toUpperCase() === "SI")
+            .map(r => ({
+                id: r.ID,
+                nombre: r.Nombre,
+                precio: parseFloat(r.Precio) || 0
+            }));
 
-    const productoExtras = rawProductoExtras.map(r => ({
-      productoId: r.ProductoID,
-      extraId: r.ExtraID
-    }));
+        const productoExtras = rawProductoExtras.map(r => ({
+            productoId: r.ProductoID,
+            extraId: r.ExtraID
+        }));
 
-    // Procesar banners por posición
-    const bannersPrincipal = [];
-    const bannersSecundario = [];
-    const bannersTerciario = [];
+        // Banners por posición
+        const bannersPrincipal = [];
+        const bannersSecundario = [];
+        const bannersTerciario = [];
 
-    banners.forEach(b => {
-      const banner = { id: b.id, url: b.banner_url };
-      const pos = (b.posicion || "Principal").toLowerCase();
-      
-      if (pos === "secundario") bannersSecundario.push(banner);
-      else if (pos === "terciario") bannersTerciario.push(banner);
-      else bannersPrincipal.push(banner);
-    });
+        rawBanners.forEach(b => {
+            if (b.Activo && b.Activo.toLowerCase() === "si" && b.Banner_URL) {
+                const banner = { id: b.ID, url: b.Banner_URL };
+                const pos = (b.Posicion || "Principal").toLowerCase();
+                
+                if (pos === "secundario") bannersSecundario.push(banner);
+                else if (pos === "terciario") bannersTerciario.push(banner);
+                else bannersPrincipal.push(banner);
+            }
+        });
 
-    // Procesar promociones
-    const hoy = new Date();
-    const productosMap = {};
-    rawProductos.forEach(p => productosMap[p.ID] = p.Nombre || "Producto");
+        // Promociones
+        const hoy = new Date();
+        const productosMap = {};
+        rawProductos.forEach(p => productosMap[p.ID] = p.Nombre || "Producto");
 
-    const promocionesFormat = promociones
-      .filter(promo => {
-        if (promo.fechainicio) {
-          const inicio = new Date(promo.fechainicio);
-          if (hoy < inicio) return false;
-        }
-        if (promo.fechafin) {
-          const fin = new Date(promo.fechafin);
-          fin.setHours(23, 59, 59);
-          if (hoy > fin) return false;
-        }
-        return true;
-      })
-      .map(promo => {
-        const productosPromo = promoProductos
-          .filter(pp => pp.promocionid === promo.id)
-          .map(pp => ({
-            productoId: pp.productoid,
-            nombreProducto: productosMap[pp.productoid] || "Producto",
-            cantidad: parseInt(pp.cantidad) || 1
-          }));
+        const promocionesFormat = rawPromociones
+            .filter(promo => {
+                if (!promo.Activo || promo.Activo.toLowerCase() !== "si") return false;
+                
+                if (promo.FechaInicio) {
+                    const inicio = new Date(promo.FechaInicio);
+                    if (hoy < inicio) return false;
+                }
+                if (promo.FechaFin) {
+                    const fin = new Date(promo.FechaFin);
+                    fin.setHours(23, 59, 59);
+                    if (hoy > fin) return false;
+                }
+                return true;
+            })
+            .map(promo => {
+                const productosPromo = rawPromoProductos
+                    .filter(pp => pp.PromocionID === promo.ID)
+                    .map(pp => ({
+                        productoId: pp.ProductoID,
+                        nombreProducto: productosMap[pp.ProductoID] || "Producto",
+                        cantidad: parseInt(pp.Cantidad) || 1
+                    }));
 
-        const precioNormal = parseFloat(promo.precionormal) || 0;
-        const precioPromo = parseFloat(promo.preciopromo) || 0;
-        const ahorro = precioNormal - precioPromo;
-        const descuentoPct = precioNormal > 0 ? Math.round((ahorro / precioNormal) * 100) : 0;
+                const precioNormal = parseFloat(promo.PrecioNormal) || 0;
+                const precioPromo = parseFloat(promo.PrecioPromo) || 0;
+                const ahorro = precioNormal - precioPromo;
+                const descuentoPct = precioNormal > 0 ? Math.round((ahorro / precioNormal) * 100) : 0;
 
-        return {
-          id: promo.id,
-          nombre: promo.nombre || "",
-          descripcion: promo.descripcion || "",
-          imagen: promo.imagenurl || "",
-          precioNormal,
-          precioPromo,
-          ahorro,
-          descuentoPct,
-          productos: productosPromo,
-          orden: parseInt(promo.orden) || 99,
-          fechaFin: promo.fechafin || ""
-        };
-      })
-      .sort((a, b) => a.orden - b.orden);
+                return {
+                    id: promo.ID,
+                    nombre: promo.Nombre || "",
+                    descripcion: promo.Descripcion || "",
+                    imagen: promo.ImagenUrl || "",
+                    precioNormal,
+                    precioPromo,
+                    ahorro,
+                    descuentoPct,
+                    productos: productosPromo,
+                    orden: parseInt(promo.Orden) || 99,
+                    fechaFin: promo.FechaFin || ""
+                };
+            })
+            .sort((a, b) => a.orden - b.orden);
 
-    res.json({
-      categorias: categoriasFormat,
-      productos,
-      destacados,
-      extras,
-      productoExtras,
-      banners: bannersPrincipal,
-      bannersSecundario,
-      bannersTerciario,
-      promociones: promocionesFormat
-    });
+        res.json({
+            categorias: categoriasFormat,
+            productos,
+            destacados,
+            extras,
+            productoExtras,
+            banners: bannersPrincipal,
+            bannersSecundario,
+            bannersTerciario,
+            promociones: promocionesFormat
+        });
 
-  } catch (error) {
-    console.error('ERROR /api/menu:', error);
-    res.status(500).json({ error: error.message });
-  }
+    } catch (error) {
+        console.error('ERROR /api/menu:', error);
+        res.status(500).json({ error: error.message });
+    }
 });
 
 // LOGIN CLIENTE - MySQL
@@ -536,47 +538,49 @@ app.delete('/api/direcciones/:id', async (req, res) => {
   }
 });
 
-// CUPON AUTOMATICO - MySQL
-app.get('/api/cupones/automatico', async (req, res) => {
-  try {
-    const { clienteId } = req.query;
-    
-    const [cupones] = await pool.query(
-      "SELECT * FROM cupones WHERE automatico = 'SI'"
-    );
-    
-    const hoy = new Date();
-    
-    for (const c of cupones) {
-      if (c.vigencia) {
-        const vigencia = new Date(c.vigencia);
-        if (hoy > vigencia) continue;
-      }
-      
-      if (clienteId) {
+app.post('/api/cupones/validar', async (req, res) => {
+    try {
+        const { codigo, clienteId } = req.body;
+        
+        const cupones = await appSheetFind('Cupones', `Filter(Cupones, LOWER([CodigoCupon]) = LOWER("${codigo}"))`);
+        
+        if (cupones.length === 0) {
+            return res.json({ success: false, mensaje: "Cupón no válido" });
+        }
+        
+        const c = cupones[0];
+        const hoy = new Date();
+        
+        if (c.Vigencia) {
+            const vigencia = new Date(c.Vigencia);
+            if (hoy > vigencia) {
+                return res.json({ success: false, mensaje: "Este cupón ha expirado" });
+            }
+        }
+        
         const [usosCliente] = await pool.query(
-          "SELECT * FROM ventas WHERE cuponaplicado = ? AND clienteid = ?",
-          [c.id, clienteId]
+            "SELECT * FROM ventas WHERE cuponaplicado = ? AND clienteid = ?",
+            [c.Id, clienteId]
         );
-        if (usosCliente.length > 0) continue;
-      }
-      
-      return res.json({
-        id: c.id,
-        nombre: c.nombrecupon,
-        descuento: parseFloat(c.descuento) || 0,
-        codigo: c.codigocupon,
-        imagen: c.imagenurl || "",
-        vigencia: c.vigencia
-      });
+        
+        if (usosCliente.length > 0) {
+            return res.json({ success: false, mensaje: "Ya usaste este cupón" });
+        }
+        
+        res.json({
+            success: true,
+            cupon: {
+                id: c.Id,
+                nombre: c.NombreCupon,
+                descuento: parseFloat(c["Descuento%"]) || 0,
+                codigo: c.CodigoCupon
+            }
+        });
+        
+    } catch (error) {
+        console.error('ERROR /api/cupones/validar:', error);
+        res.json({ success: false, mensaje: error.message });
     }
-    
-    res.json(null);
-    
-  } catch (error) {
-    console.error('ERROR /api/cupones/automatico:', error);
-    res.json(null);
-  }
 });
 
 // VALIDAR CUPON - MySQL
