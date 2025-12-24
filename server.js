@@ -311,8 +311,12 @@ app.put('/api/auth/perfil/:id', async (req, res) => {
         const { nombre, telefono, contrasena } = req.body;
         const clienteId = req.params.id;
         
+        // Log para debug
+        console.log('Actualizando perfil:', { clienteId, nombre, telefono, tieneContrasena: !!contrasena });
+        
         // Validar que vengan los datos básicos
         if (!nombre || !telefono) {
+            await conn.rollback();
             return res.json({ success: false, mensaje: "Nombre y teléfono son requeridos" });
         }
         
@@ -320,14 +324,20 @@ app.put('/api/auth/perfil/:id', async (req, res) => {
         let query = "UPDATE clientes SET nombre = ?, telefono = ?";
         let params = [nombre, telefono];
         
-        // Solo actualizar contraseña si se proporciona y no está vacía
-        if (contrasena !== undefined && contrasena !== null && contrasena.trim() !== "") {
+        // Solo actualizar contraseña si se proporciona Y no está vacía
+        if (contrasena !== undefined && contrasena !== null && typeof contrasena === 'string' && contrasena.trim() !== "") {
+            console.log('Actualizando contraseña también');
             query += ", contrasena = ?";
             params.push(contrasena.trim());
+        } else {
+            console.log('NO actualizando contraseña (vacía o no proporcionada)');
         }
         
         query += " WHERE id = ?";
         params.push(clienteId);
+        
+        console.log('Query final:', query);
+        console.log('Params:', params);
         
         await conn.query(query, params);
         
@@ -350,6 +360,7 @@ app.put('/api/auth/perfil/:id', async (req, res) => {
                 }
             });
         } else {
+            await conn.rollback();
             res.json({ success: false, mensaje: "Cliente no encontrado" });
         }
         
