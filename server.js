@@ -311,14 +311,19 @@ app.put('/api/auth/perfil/:id', async (req, res) => {
         const { nombre, telefono, contrasena } = req.body;
         const clienteId = req.params.id;
         
+        // Validar que vengan los datos básicos
+        if (!nombre || !telefono) {
+            return res.json({ success: false, mensaje: "Nombre y teléfono son requeridos" });
+        }
+        
         // Construir query dinámico
         let query = "UPDATE clientes SET nombre = ?, telefono = ?";
         let params = [nombre, telefono];
         
-        // Solo actualizar contraseña si se proporciona
-        if (contrasena && contrasena.trim() !== "") {
+        // Solo actualizar contraseña si se proporciona y no está vacía
+        if (contrasena !== undefined && contrasena !== null && contrasena.trim() !== "") {
             query += ", contrasena = ?";
-            params.push(contrasena);
+            params.push(contrasena.trim());
         }
         
         query += " WHERE id = ?";
@@ -345,7 +350,7 @@ app.put('/api/auth/perfil/:id', async (req, res) => {
                 }
             });
         } else {
-            res.json({ success: false, mensaje: "Error al actualizar" });
+            res.json({ success: false, mensaje: "Cliente no encontrado" });
         }
         
     } catch (error) {
