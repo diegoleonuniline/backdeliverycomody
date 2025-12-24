@@ -302,6 +302,61 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
+// ACTUALIZAR PERFIL - MySQL
+app.put('/api/auth/perfil/:id', async (req, res) => {
+    const conn = await pool.getConnection();
+    try {
+        await conn.beginTransaction();
+        
+        const { nombre, telefono, contrasena } = req.body;
+        const clienteId = req.params.id;
+        
+        // Construir query dinámico
+        let query = "UPDATE clientes SET nombre = ?, telefono = ?";
+        let params = [nombre, telefono];
+        
+        // Solo actualizar contraseña si se proporciona
+        if (contrasena && contrasena.trim() !== "") {
+            query += ", contrasena = ?";
+            params.push(contrasena);
+        }
+        
+        query += " WHERE id = ?";
+        params.push(clienteId);
+        
+        await conn.query(query, params);
+        
+        // Obtener datos actualizados
+        const [cliente] = await conn.query("SELECT * FROM clientes WHERE id = ?", [clienteId]);
+        
+        await conn.commit();
+        
+        if (cliente.length > 0) {
+            res.json({
+                success: true,
+                mensaje: "Perfil actualizado",
+                cliente: {
+                    id: cliente[0].id,
+                    nombre: cliente[0].nombre,
+                    telefono: cliente[0].telefono,
+                    correo: cliente[0].correo,
+                    direccion: cliente[0].direccion || "",
+                    puntos: cliente[0].puntos || 0
+                }
+            });
+        } else {
+            res.json({ success: false, mensaje: "Error al actualizar" });
+        }
+        
+    } catch (error) {
+        await conn.rollback();
+        console.error('ERROR actualizar perfil:', error);
+        res.json({ success: false, mensaje: error.message });
+    } finally {
+        conn.release();
+    }
+});
+
 // REGISTRAR PEDIDO - MySQL
 app.post('/api/pedidos', async (req, res) => {
   const conn = await pool.getConnection();
